@@ -1,0 +1,14 @@
+@import 'tailwindcss' source(none);
+@source './**/*.{js,ts}';
+@import 'tw-animate-css';
+@import './styles/globals.css';
+@import './styles/app-ui.css';
+
+@layer base {
+  html, body, app-root {
+    min-height: 100vh;
+    height: 100%;
+    margin: 0;
+    display: block;
+  }
+}
