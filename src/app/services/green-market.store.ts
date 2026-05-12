@@ -1,14 +1,20 @@
-import { computed, Injectable, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { computed, Injectable, inject, signal } from '@angular/core';
+import { Observable, catchError, map, of, tap } from 'rxjs';
 import { MOCK_PRODUCTS } from '../data/mock-products';
 import type { CartItem, Order, Product, UserRole } from '../models/green-market.models';
 
 @Injectable({ providedIn: 'root' })
 export class GreenMarketStore {
+  private readonly http = inject(HttpClient);
+
   readonly userRole = signal<UserRole>('guest');
   readonly cart = signal<CartItem[]>([]);
   readonly orders = signal<Order[]>([]);
-  // Clonamos para que el panel admin pueda editar stock sin mutar el mock original.
   readonly products = signal<Product[]>(MOCK_PRODUCTS.map((p) => ({ ...p })));
+
+  /** Si la API respondió al cargar productos, las mutaciones van a MongoDB vía REST. */
+  private readonly useBackend = signal(false);
 
   readonly cartCount = computed(() => this.cart().length);
   readonly cartTotal = computed(() =>
@@ -29,6 +35,31 @@ export class GreenMarketStore {
   readonly ordersDeliveredCount = computed(() =>
     this.orders().filter((o) => o.status === 'delivered').length,
   );
+
+  constructor() {
+    this.refreshProducts();
+    this.refreshOrders();
+  }
+
+  private refreshProducts(): void {
+    this.http.get<Product[]>('/api/products').subscribe({
+      next: (list) => {
+        this.products.set(list);
+        this.useBackend.set(true);
+      },
+      error: () => {
+        this.products.set(MOCK_PRODUCTS.map((p) => ({ ...p })));
+        this.useBackend.set(false);
+      },
+    });
+  }
+
+  private refreshOrders(): void {
+    this.http.get<Order[]>('/api/orders').subscribe({
+      next: (list) => this.orders.set(list),
+      error: () => {},
+    });
+  }
 
   login(role: UserRole): void {
     this.userRole.set(role);
@@ -64,16 +95,15 @@ export class GreenMarketStore {
     });
   }
 
-  /** Crea el pedido, vacia el carrito y devuelve el id del pedido. */
-  placeOrder(): string | null {
+  /** Pedido local (sin API / datos mock). */
+  private placeOrderLocal(): string | null {
     const items = this.cart();
     if (items.length === 0) {
       return null;
     }
 
-    // Descontamos stock en el momento de confirmar el pedido.
     for (const item of items) {
-      this.adjustProductStock(item.id, -item.quantity);
+      this.adjustProductStockLocal(item.id, -item.quantity);
     }
 
     const total = this.cartTotal();
@@ -89,7 +119,38 @@ export class GreenMarketStore {
     return newOrder.id;
   }
 
-  adjustProductStock(productId: string, delta: number): void {
+  /**
+   * Confirma el pedido. Si la API está activa, persiste en MongoDB y actualiza stock en servidor.
+   */
+  placeOrder(): Observable<string | null> {
+    const items = this.cart();
+    if (items.length === 0) {
+      return of(null);
+    }
+
+    if (!this.useBackend()) {
+      return of(this.placeOrderLocal());
+    }
+
+    const payload = {
+      items: items.map((item) => ({
+        productId: item.id,
+        quantity: item.quantity,
+      })),
+    };
+
+    return this.http.post<Order>('/api/orders', payload).pipe(
+      tap(() => {
+        this.cart.set([]);
+        this.refreshProducts();
+        this.refreshOrders();
+      }),
+      map((order) => order.id),
+      catchError(() => of(null)),
+    );
+  }
+
+  private adjustProductStockLocal(productId: string, delta: number): void {
     this.products.update((items) =>
       items.map((product) => {
         if (product.id !== productId) return product;
@@ -99,32 +160,105 @@ export class GreenMarketStore {
     );
   }
 
+  adjustProductStock(productId: string, delta: number): void {
+    if (!this.useBackend()) {
+      this.adjustProductStockLocal(productId, delta);
+      return;
+    }
+
+    this.http.patch<Product>(`/api/products/${encodeURIComponent(productId)}/stock`, { delta }).subscribe({
+      next: (updated) => {
+        this.products.update((list) =>
+          list.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
+        );
+      },
+      error: () => this.adjustProductStockLocal(productId, delta),
+    });
+  }
+
   setOrderStatus(orderId: string, status: Order['status']): void {
-    this.orders.update((orders) =>
-      orders.map((order) => (order.id === orderId ? { ...order, status } : order)),
-    );
+    if (!this.useBackend()) {
+      this.orders.update((orders) =>
+        orders.map((order) => (order.id === orderId ? { ...order, status } : order)),
+      );
+      return;
+    }
+
+    this.http
+      .patch<Order>(`/api/orders/${encodeURIComponent(orderId)}/status`, { status })
+      .subscribe({
+        next: (o) => {
+          this.orders.update((orders) => orders.map((x) => (x.id === o.id ? o : x)));
+        },
+        error: () => {
+          this.orders.update((orders) =>
+            orders.map((order) => (order.id === orderId ? { ...order, status } : order)),
+          );
+        },
+      });
   }
 
   addProduct(product: Omit<Product, 'id'>): void {
-    const id = Math.random().toString(36).slice(2, 10);
-    this.products.update((items) => [...items, { ...product, id }]);
+    if (!this.useBackend()) {
+      const id = Math.random().toString(36).slice(2, 10);
+      this.products.update((items) => [...items, { ...product, id }]);
+      return;
+    }
+
+    this.http.post<Product>('/api/products', product).subscribe({
+      next: (p) => this.products.update((items) => [...items, p]),
+      error: () => {
+        const id = Math.random().toString(36).slice(2, 10);
+        this.products.update((items) => [...items, { ...product, id }]);
+      },
+    });
   }
 
   updateProduct(productId: string, changes: Partial<Product>): void {
-    this.products.update((items) =>
-      items.map((product) =>
-        product.id === productId
-          ? {
-              ...product,
-              ...changes,
-              id: productId, // Evita que el admin rompa el id.
-            }
-          : product,
-      ),
-    );
+    if (!this.useBackend()) {
+      this.products.update((items) =>
+        items.map((product) =>
+          product.id === productId
+            ? {
+                ...product,
+                ...changes,
+                id: productId,
+              }
+            : product,
+        ),
+      );
+      return;
+    }
+
+    this.http.patch<Product>(`/api/products/${encodeURIComponent(productId)}`, changes).subscribe({
+      next: (updated) => {
+        this.products.update((items) =>
+          items.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
+        );
+      },
+      error: () => {
+        this.products.update((items) =>
+          items.map((product) =>
+            product.id === productId ? { ...product, ...changes, id: productId } : product,
+          ),
+        );
+      },
+    });
   }
 
   deleteProduct(productId: string): void {
-    this.products.update((items) => items.filter((p) => p.id !== productId));
+    if (!this.useBackend()) {
+      this.products.update((items) => items.filter((p) => p.id !== productId));
+      return;
+    }
+
+    this.http.delete(`/api/products/${encodeURIComponent(productId)}`).subscribe({
+      next: () => {
+        this.products.update((items) => items.filter((p) => p.id !== productId));
+      },
+      error: () => {
+        this.products.update((items) => items.filter((p) => p.id !== productId));
+      },
+    });
   }
 }

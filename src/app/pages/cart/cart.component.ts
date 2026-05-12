@@ -68,9 +68,12 @@ export class CartComponent {
   private readonly router = inject(Router);
 
   confirm(): void {
-    const id = this.store.placeOrder();
-    if (id) {
-      void this.router.navigate(['/orders']);
-    }
+    this.store.placeOrder().subscribe({
+      next: (id) => {
+        if (id) {
+          void this.router.navigate(['/orders']);
+        }
+      },
+    });
   }
 }

@@ -29,6 +29,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "vite"
+    "start": "vite",
+    "api": "npm run dev --prefix server",
+    "db:up": "docker compose up -d",
+    "db:seed": "npm run seed --prefix server"
   }
 }

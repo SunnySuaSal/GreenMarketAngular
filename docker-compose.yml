@@ -1,0 +1,13 @@
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_DATABASE: greenmarket
+    volumes:
+      - greenmarket_mongo_data:/data/db
+
+volumes:
+  greenmarket_mongo_data:
