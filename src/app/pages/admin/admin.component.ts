@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { Product } from '../../models/green-market.models';
 import { GreenMarketStore } from '../../services/green-market.store';
@@ -198,6 +198,7 @@ import { GreenMarketStore } from '../../services/green-market.store';
             <thead class="text-gray-600">
               <tr>
                 <th class="p-2">Pedido</th>
+                <th class="p-2">Cliente</th>
                 <th class="p-2">Fecha</th>
                 <th class="p-2">Estado</th>
                 <th class="p-2">Total</th>
@@ -209,6 +210,7 @@ import { GreenMarketStore } from '../../services/green-market.store';
               @for (order of store.orders(); track order.id) {
                 <tr class="border-t">
                   <td class="p-2">#{{ order.id }}</td>
+                  <td class="p-2 text-gray-700">{{ order.customerUsername ?? '—' }}</td>
                   <td class="p-2 text-gray-700">{{ order.date }}</td>
                   <td class="p-2 text-gray-700 capitalize">{{ order.status }}</td>
                   <td class="p-2 text-gray-700">{{ order.total | currency: 'USD' }}</td>
@@ -249,8 +251,12 @@ import { GreenMarketStore } from '../../services/green-market.store';
     </section>
   `,
 })
-export class AdminComponent {
+export class AdminComponent implements OnInit {
   readonly store = inject(GreenMarketStore);
+
+  ngOnInit(): void {
+    this.store.refreshOrders();
+  }
 
   // Estado local del formulario (admin CRUD).
   isEditing = false;

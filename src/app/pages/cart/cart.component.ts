@@ -42,6 +42,9 @@ import { GreenMarketStore } from '../../services/green-market.store';
             <span>Total</span>
             <strong>{{ store.cartTotal() | currency: 'USD' }}</strong>
           </div>
+          @if (store.lastOrderError()) {
+            <p class="rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ store.lastOrderError() }}</p>
+          }
           <div class="flex flex-wrap gap-2">
             <button
               type="button"

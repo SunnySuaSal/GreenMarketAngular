@@ -1,5 +1,5 @@
 import { CurrencyPipe } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { GreenMarketStore } from '../../services/green-market.store';
 
 @Component({
@@ -9,11 +9,11 @@ import { GreenMarketStore } from '../../services/green-market.store';
   template: `
     <section>
       <h2 class="mb-4 text-2xl font-semibold">Mis pedidos</h2>
-      @if (store.orders().length === 0) {
+      @if (store.myOrders().length === 0) {
         <p class="rounded-xl bg-white p-4 shadow">No hay pedidos aun.</p>
       } @else {
         <div class="space-y-3">
-          @for (order of store.orders(); track order.id) {
+          @for (order of store.myOrders(); track order.id) {
             <div class="rounded-xl bg-white p-4 shadow">
               <div class="flex items-center justify-between">
                 <div>
@@ -46,6 +46,10 @@ import { GreenMarketStore } from '../../services/green-market.store';
     </section>
   `,
 })
-export class OrdersComponent {
+export class OrdersComponent implements OnInit {
   readonly store = inject(GreenMarketStore);
+
+  ngOnInit(): void {
+    this.store.refreshOrders();
+  }
 }

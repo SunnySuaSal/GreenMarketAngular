@@ -6,35 +6,46 @@ import { Product } from '../models/Product.js';
 export const ordersRouter = Router();
 
 function isValidObjectId(id) {
-  return mongoose.Types.ObjectId.isValid(id);
+  return typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id);
 }
 
-ordersRouter.get('/', async (_req, res, next) => {
+function mapOrder(o) {
+  return {
+    id: o._id.toString(),
+    date: o.date,
+    customerUsername: o.customerUsername,
+    items: o.items.map((item) => ({
+      ...item,
+      id: item.productId,
+    })),
+    total: o.total,
+    status: o.status,
+  };
+}
+
+ordersRouter.get('/', async (req, res, next) => {
   try {
-    const list = await Order.find().sort({ createdAt: -1 }).lean();
-    const mapped = list.map((o) => ({
-      id: o._id.toString(),
-      date: o.date,
-      items: o.items.map((item) => ({
-        ...item,
-        id: item.productId,
-      })),
-      total: o.total,
-      status: o.status,
-    }));
-    res.json(mapped);
+    const customer =
+      typeof req.query.customer === 'string' ? req.query.customer.trim() : '';
+    const filter = customer ? { customerUsername: customer } : {};
+    const list = await Order.find(filter).sort({ createdAt: -1 }).lean();
+    res.json(list.map(mapOrder));
   } catch (err) {
     next(err);
   }
 });
 
 ordersRouter.post('/', async (req, res, next) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
   try {
     const itemsInput = req.body?.items;
+    const customerUsername =
+      typeof req.body?.customerUsername === 'string' ? req.body.customerUsername.trim() : '';
+
+    if (!customerUsername) {
+      res.status(400).json({ message: 'customerUsername requerido' });
+      return;
+    }
     if (!Array.isArray(itemsInput) || itemsInput.length === 0) {
-      await session.abortTransaction();
       res.status(400).json({ message: 'items no puede estar vacío' });
       return;
     }
@@ -45,30 +56,26 @@ ordersRouter.post('/', async (req, res, next) => {
     for (const row of itemsInput) {
       const qty = Number(row.quantity);
       if (!Number.isFinite(qty) || qty < 1) {
-        await session.abortTransaction();
         res.status(400).json({ message: 'Cantidad inválida' });
         return;
       }
       if (!row.productId || !isValidObjectId(row.productId)) {
-        await session.abortTransaction();
         res.status(400).json({ message: 'productId inválido' });
         return;
       }
 
-      const product = await Product.findById(row.productId).session(session);
+      const product = await Product.findById(row.productId);
       if (!product) {
-        await session.abortTransaction();
         res.status(404).json({ message: `Producto no encontrado: ${row.productId}` });
         return;
       }
       if (product.stock < qty) {
-        await session.abortTransaction();
         res.status(400).json({ message: `Stock insuficiente para ${product.name}` });
         return;
       }
 
       product.stock -= qty;
-      await product.save({ session });
+      await product.save();
 
       const lineTotal = product.price * qty;
       total += lineTotal;
@@ -88,36 +95,17 @@ ordersRouter.post('/', async (req, res, next) => {
       });
     }
 
-    const order = await Order.create(
-      [
-        {
-          date: new Date().toLocaleDateString('es-ES'),
-          items: lineItems,
-          total,
-          status: 'pending',
-        },
-      ],
-      { session },
-    );
-
-    await session.commitTransaction();
-
-    const created = order[0];
-    res.status(201).json({
-      id: created._id.toString(),
-      date: created.date,
-      items: created.items.map((item) => ({
-        ...item.toObject?.() ?? item,
-        id: item.productId,
-      })),
-      total: created.total,
-      status: created.status,
+    const created = await Order.create({
+      date: new Date().toLocaleDateString('es-ES'),
+      customerUsername,
+      items: lineItems,
+      total,
+      status: 'pending',
     });
+
+    res.status(201).json(mapOrder(created.toObject()));
   } catch (err) {
-    await session.abortTransaction();
     next(err);
-  } finally {
-    session.endSession();
   }
 });
 
@@ -137,16 +125,7 @@ ordersRouter.patch('/:id/status', async (req, res, next) => {
       res.status(404).json({ message: 'Pedido no encontrado' });
       return;
     }
-    res.json({
-      id: doc._id.toString(),
-      date: doc.date,
-      items: doc.items.map((item) => ({
-        ...item.toObject?.() ?? item,
-        id: item.productId,
-      })),
-      total: doc.total,
-      status: doc.status,
-    });
+    res.json(mapOrder(doc.toObject()));
   } catch (err) {
     next(err);
   }

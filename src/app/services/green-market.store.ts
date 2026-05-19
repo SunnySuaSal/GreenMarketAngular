@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, Injectable, inject, signal } from '@angular/core';
 import { Observable, catchError, map, of, tap } from 'rxjs';
 import { MOCK_PRODUCTS } from '../data/mock-products';
@@ -9,9 +9,11 @@ export class GreenMarketStore {
   private readonly http = inject(HttpClient);
 
   readonly userRole = signal<UserRole>('guest');
+  readonly username = signal('');
   readonly cart = signal<CartItem[]>([]);
   readonly orders = signal<Order[]>([]);
   readonly products = signal<Product[]>(MOCK_PRODUCTS.map((p) => ({ ...p })));
+  readonly lastOrderError = signal<string | null>(null);
 
   /** Si la API respondió al cargar productos, las mutaciones van a MongoDB vía REST. */
   private readonly useBackend = signal(false);
@@ -36,9 +38,18 @@ export class GreenMarketStore {
     this.orders().filter((o) => o.status === 'delivered').length,
   );
 
+  /** Pedidos visibles para el cliente (filtra por usuario en modo local). */
+  readonly myOrders = computed(() => {
+    const list = this.orders();
+    const name = this.username();
+    if (this.userRole() !== 'user' || !name) {
+      return list;
+    }
+    return list.filter((o) => !o.customerUsername || o.customerUsername === name);
+  });
+
   constructor() {
     this.refreshProducts();
-    this.refreshOrders();
   }
 
   private refreshProducts(): void {
@@ -46,6 +57,10 @@ export class GreenMarketStore {
       next: (list) => {
         this.products.set(list);
         this.useBackend.set(true);
+        this.syncCartProductIds(list);
+        if (this.userRole() !== 'guest') {
+          this.refreshOrders();
+        }
       },
       error: () => {
         this.products.set(MOCK_PRODUCTS.map((p) => ({ ...p })));
@@ -54,20 +69,74 @@ export class GreenMarketStore {
     });
   }
 
-  private refreshOrders(): void {
-    this.http.get<Order[]>('/api/orders').subscribe({
+  refreshOrders(): void {
+    const role = this.userRole();
+    if (role === 'guest') {
+      this.orders.set([]);
+      return;
+    }
+
+    if (!this.useBackend()) {
+      this.orders.set(this.ordersForRoleLocal());
+      return;
+    }
+
+    const url =
+      role === 'user' && this.username()
+        ? `/api/orders?customer=${encodeURIComponent(this.username())}`
+        : '/api/orders';
+
+    this.http.get<Order[]>(url).subscribe({
       next: (list) => this.orders.set(list),
-      error: () => {},
+      error: () => {
+        this.orders.set(this.ordersForRoleLocal());
+      },
     });
   }
 
-  login(role: UserRole): void {
+  private ordersForRoleLocal(): Order[] {
+    const all = this.orders();
+    if (this.userRole() === 'admin') {
+      return all;
+    }
+    const name = this.username();
+    if (!name) {
+      return [];
+    }
+    return all.filter((o) => o.customerUsername === name);
+  }
+
+  /** Alinea ids del carrito con los de MongoDB tras cargar el catálogo. */
+  private syncCartProductIds(products: Product[]): void {
+    this.cart.update((items) =>
+      items
+        .map((item) => {
+          const byId = products.find((p) => p.id === item.id);
+          if (byId) {
+            return { ...byId, quantity: item.quantity };
+          }
+          const byName = products.find((p) => p.name === item.name);
+          if (byName) {
+            return { ...byName, quantity: item.quantity };
+          }
+          return null;
+        })
+        .filter((item): item is CartItem => item !== null),
+    );
+  }
+
+  login(role: UserRole, username: string): void {
     this.userRole.set(role);
+    this.username.set(username);
+    this.refreshOrders();
   }
 
   logout(): void {
     this.userRole.set('guest');
+    this.username.set('');
     this.cart.set([]);
+    this.orders.set([]);
+    this.lastOrderError.set(null);
   }
 
   addToCart(product: Product): void {
@@ -98,7 +167,8 @@ export class GreenMarketStore {
   /** Pedido local (sin API / datos mock). */
   private placeOrderLocal(): string | null {
     const items = this.cart();
-    if (items.length === 0) {
+    const customer = this.username().trim();
+    if (items.length === 0 || !customer) {
       return null;
     }
 
@@ -109,7 +179,8 @@ export class GreenMarketStore {
     const total = this.cartTotal();
     const newOrder: Order = {
       id: Math.random().toString(36).slice(2, 9),
-      date: new Date().toLocaleDateString(),
+      date: new Date().toLocaleDateString('es-ES'),
+      customerUsername: customer,
       items: [...items],
       total,
       status: 'pending',
@@ -123,16 +194,29 @@ export class GreenMarketStore {
    * Confirma el pedido. Si la API está activa, persiste en MongoDB y actualiza stock en servidor.
    */
   placeOrder(): Observable<string | null> {
+    this.lastOrderError.set(null);
     const items = this.cart();
+    const customer = this.username().trim();
+
     if (items.length === 0) {
+      this.lastOrderError.set('El carrito está vacío.');
+      return of(null);
+    }
+    if (!customer) {
+      this.lastOrderError.set('Debes iniciar sesión para confirmar el pedido.');
       return of(null);
     }
 
     if (!this.useBackend()) {
-      return of(this.placeOrderLocal());
+      const id = this.placeOrderLocal();
+      if (!id) {
+        this.lastOrderError.set('No se pudo registrar el pedido.');
+      }
+      return of(id);
     }
 
     const payload = {
+      customerUsername: customer,
       items: items.map((item) => ({
         productId: item.id,
         quantity: item.quantity,
@@ -140,13 +224,26 @@ export class GreenMarketStore {
     };
 
     return this.http.post<Order>('/api/orders', payload).pipe(
-      tap(() => {
+      tap((order) => {
         this.cart.set([]);
+        this.orders.update((current) => {
+          if (this.userRole() === 'admin') {
+            return [order, ...current];
+          }
+          return [order, ...current.filter((o) => o.customerUsername === customer)];
+        });
         this.refreshProducts();
         this.refreshOrders();
       }),
       map((order) => order.id),
-      catchError(() => of(null)),
+      catchError((err: HttpErrorResponse) => {
+        const message =
+          typeof err.error?.message === 'string'
+            ? err.error.message
+            : 'No se pudo confirmar el pedido. Comprueba que la API y MongoDB estén activos.';
+        this.lastOrderError.set(message);
+        return of(null);
+      }),
     );
   }
 

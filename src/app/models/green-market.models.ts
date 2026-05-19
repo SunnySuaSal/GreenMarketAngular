@@ -20,6 +20,7 @@ export interface CartItem extends Product {
 export interface Order {
   id: string;
   date: string;
+  customerUsername?: string;
   items: CartItem[];
   total: number;
   status: 'pending' | 'confirmed' | 'delivered';

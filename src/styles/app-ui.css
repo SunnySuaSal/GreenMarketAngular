@@ -37,3 +37,107 @@
   justify-content: center;
   font-size: 0.75rem;
 }
+
+/* Reportes admin */
+.report-kpi {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  border-radius: 1rem;
+  background: white;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  border: 1px solid #f3f4f6;
+}
+
+.report-kpi--hero {
+  background: linear-gradient(135deg, #15803d 0%, #16a34a 45%, #22c55e 100%);
+  border: none;
+  color: white;
+}
+
+.report-kpi--hero .report-kpi__label,
+.report-kpi--hero .report-kpi__hint {
+  color: rgb(255 255 255 / 0.85);
+}
+
+.report-kpi--hero .report-kpi__value {
+  color: white;
+}
+
+.report-kpi--hero .report-kpi__icon {
+  background: rgb(255 255 255 / 0.2);
+  color: white;
+}
+
+.report-kpi__icon {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.125rem;
+  font-weight: 700;
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.report-kpi__icon--blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.report-kpi__icon--amber {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.report-kpi__icon--violet {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.report-kpi__label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.report-kpi__value {
+  margin-top: 0.125rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.report-kpi__hint {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.report-status {
+  display: inline-block;
+  border-radius: 9999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.report-status[data-status='pending'] {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.report-status[data-status='confirmed'] {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.report-status[data-status='delivered'] {
+  background: #dcfce7;
+  color: #15803d;
+}

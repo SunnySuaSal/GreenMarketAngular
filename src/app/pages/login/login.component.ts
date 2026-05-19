@@ -72,7 +72,7 @@ export class LoginComponent {
       role = 'admin';
     }
 
-    this.store.login(role);
+    this.store.login(role, username);
     const next = role === 'admin' ? '/admin' : '/catalog';
     void this.router.navigate([next]);
   }

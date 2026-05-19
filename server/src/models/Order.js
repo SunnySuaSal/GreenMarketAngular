@@ -20,6 +20,7 @@ const cartItemSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     date: { type: String, required: true },
+    customerUsername: { type: String, required: true, trim: true },
     items: { type: [cartItemSchema], required: true, validate: (v) => Array.isArray(v) && v.length > 0 },
     total: { type: Number, required: true, min: 0 },
     status: {
