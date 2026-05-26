@@ -2,6 +2,9 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import { connectDb } from '../src/db/connect.js';
 import { Product } from '../src/models/Product.js';
+import { Comment } from '../src/models/Comment.js';
+import { User } from '../src/models/User.js';
+import { hashPassword } from '../src/utils/password.js';
 
 const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017/greenmarket';
 
@@ -15,8 +18,8 @@ const SEED_PRODUCTS = [
     seller: 'Granja Verde',
     description: 'Tomates organicos frescos cultivados localmente',
     stock: 25,
-    rating: 4.8,
-    reviews: 12,
+    rating: 0,
+    reviews: 0,
   },
   {
     name: 'Manzanas Locales',
@@ -27,8 +30,8 @@ const SEED_PRODUCTS = [
     seller: 'Huerto Familiar',
     description: 'Manzanas crujientes de productores locales',
     stock: 40,
-    rating: 4.6,
-    reviews: 8,
+    rating: 0,
+    reviews: 0,
   },
   {
     name: 'Pan Artesanal',
@@ -39,8 +42,8 @@ const SEED_PRODUCTS = [
     seller: 'Panaderia Tradicional',
     description: 'Pan artesanal horneado diariamente',
     stock: 15,
-    rating: 4.9,
-    reviews: 23,
+    rating: 0,
+    reviews: 0,
   },
   {
     name: 'Verduras Mixtas',
@@ -51,13 +54,31 @@ const SEED_PRODUCTS = [
     seller: 'EcoVerde',
     description: 'Seleccion de verduras de temporada',
     stock: 18,
-    rating: 4.7,
-    reviews: 15,
+    rating: 0,
+    reviews: 0,
   },
+];
+
+const SEED_USERS = [
+  { username: 'admin', password: 'admin', role: 'admin' },
+  { username: 'juan', password: '1234', role: 'user' },
+  { username: 'maria', password: '1234', role: 'user' },
 ];
 
 await connectDb(MONGODB_URI);
 await Product.deleteMany({});
+await User.deleteMany({});
+await Comment.deleteMany({});
+
 await Product.insertMany(SEED_PRODUCTS);
-console.log(`Sembrados ${SEED_PRODUCTS.length} productos en ${MONGODB_URI}`);
+await User.insertMany(
+  SEED_USERS.map((u) => ({
+    username: u.username,
+    passwordHash: hashPassword(u.password),
+    role: u.role,
+  })),
+);
+
+console.log(`Sembrados ${SEED_PRODUCTS.length} productos y ${SEED_USERS.length} usuarios en ${MONGODB_URI}`);
+console.log('Usuarios demo: admin/admin, juan/1234, maria/1234');
 await mongoose.disconnect();

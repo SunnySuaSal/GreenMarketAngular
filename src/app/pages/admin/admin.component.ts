@@ -104,27 +104,6 @@ import { GreenMarketStore } from '../../services/green-market.store';
                 ></textarea>
               </label>
 
-              <label class="grid gap-1">
-                <span class="text-xs font-medium text-gray-700">Rating</span>
-                <input
-                  name="rating"
-                  type="number"
-                  step="0.1"
-                  class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                  [(ngModel)]="form.rating"
-                />
-              </label>
-
-              <label class="grid gap-1">
-                <span class="text-xs font-medium text-gray-700">Reviews</span>
-                <input
-                  name="reviews"
-                  type="number"
-                  step="1"
-                  class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                  [(ngModel)]="form.reviews"
-                />
-              </label>
             </div>
 
             <div class="flex flex-wrap gap-2 pt-2">
@@ -263,7 +242,7 @@ export class AdminComponent implements OnInit {
   editingId: string | null = null;
   saveMessage: string | null = null;
 
-  form: Omit<Product, 'id'> = {
+  form: Omit<Product, 'id' | 'rating' | 'reviews'> = {
     name: '',
     price: 0,
     image: '',
@@ -271,8 +250,6 @@ export class AdminComponent implements OnInit {
     seller: '',
     description: '',
     stock: 0,
-    rating: 4.7,
-    reviews: 0,
   };
 
   canSave(): boolean {
@@ -296,8 +273,6 @@ export class AdminComponent implements OnInit {
       seller: product.seller,
       description: product.description,
       stock: product.stock,
-      rating: product.rating,
-      reviews: product.reviews,
     };
   }
 
@@ -317,8 +292,6 @@ export class AdminComponent implements OnInit {
       seller: '',
       description: '',
       stock: 0,
-      rating: 4.7,
-      reviews: 0,
     };
   }
 
@@ -328,7 +301,7 @@ export class AdminComponent implements OnInit {
       this.saveMessage = 'Completa nombre, precio, categoría y vendedor.';
       return;
     }
-    this.store.addProduct(this.form);
+    this.store.addProduct({ ...this.form, rating: 0, reviews: 0 });
     this.saveMessage = 'Producto agregado.';
     this.resetForm();
   }

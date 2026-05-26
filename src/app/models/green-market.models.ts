@@ -25,3 +25,18 @@ export interface Order {
   total: number;
   status: 'pending' | 'confirmed' | 'delivered';
 }
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: 'user' | 'admin';
+}
+
+export interface ProductComment {
+  id: string;
+  productId: string;
+  username: string;
+  text: string;
+  rating: number;
+  createdAt: string;
+}

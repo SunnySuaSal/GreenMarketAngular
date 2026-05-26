@@ -2,7 +2,14 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, Injectable, inject, signal } from '@angular/core';
 import { Observable, catchError, map, of, tap } from 'rxjs';
 import { MOCK_PRODUCTS } from '../data/mock-products';
-import type { CartItem, Order, Product, UserRole } from '../models/green-market.models';
+import type {
+  AuthUser,
+  CartItem,
+  Order,
+  Product,
+  ProductComment,
+  UserRole,
+} from '../models/green-market.models';
 
 @Injectable({ providedIn: 'root' })
 export class GreenMarketStore {
@@ -14,6 +21,8 @@ export class GreenMarketStore {
   readonly orders = signal<Order[]>([]);
   readonly products = signal<Product[]>(MOCK_PRODUCTS.map((p) => ({ ...p })));
   readonly lastOrderError = signal<string | null>(null);
+  readonly lastAuthError = signal<string | null>(null);
+  readonly commentsByProduct = signal<Record<string, ProductComment[]>>({});
 
   /** Si la API respondió al cargar productos, las mutaciones van a MongoDB vía REST. */
   private readonly useBackend = signal(false);
@@ -137,6 +146,140 @@ export class GreenMarketStore {
     this.cart.set([]);
     this.orders.set([]);
     this.lastOrderError.set(null);
+    this.lastAuthError.set(null);
+    this.commentsByProduct.set({});
+  }
+
+  loginWithCredentials(username: string, password: string): Observable<boolean> {
+    this.lastAuthError.set(null);
+    const name = username.trim().toLowerCase();
+
+    if (!name || !password) {
+      this.lastAuthError.set('Usuario y contraseña requeridos');
+      return of(false);
+    }
+
+    return this.http.post<AuthUser>('/api/auth/login', { username: name, password }).pipe(
+      tap((user) => {
+        this.useBackend.set(true);
+        this.login(user.role, user.username);
+        this.refreshProducts();
+      }),
+      map(() => true),
+      catchError((err: HttpErrorResponse) => {
+        if (err.status === 0) {
+          let role: UserRole = 'user';
+          if (name === 'admin' && password === 'admin') {
+            role = 'admin';
+          }
+          this.login(role, name);
+          return of(true);
+        }
+        const message =
+          typeof err.error?.message === 'string' ? err.error.message : 'No se pudo iniciar sesión';
+        this.lastAuthError.set(message);
+        return of(false);
+      }),
+    );
+  }
+
+  register(username: string, password: string): Observable<boolean> {
+    this.lastAuthError.set(null);
+    const name = username.trim().toLowerCase();
+
+    if (!this.useBackend()) {
+      this.lastAuthError.set('Registro disponible solo con la API activa');
+      return of(false);
+    }
+
+    return this.http.post<AuthUser>('/api/auth/register', { username: name, password }).pipe(
+      tap((user) => {
+        this.useBackend.set(true);
+        this.login(user.role, user.username);
+        this.refreshProducts();
+      }),
+      map(() => true),
+      catchError((err: HttpErrorResponse) => {
+        const message =
+          typeof err.error?.message === 'string' ? err.error.message : 'No se pudo registrar';
+        this.lastAuthError.set(message);
+        return of(false);
+      }),
+    );
+  }
+
+  getComments(productId: string): ProductComment[] {
+    return this.commentsByProduct()[productId] ?? [];
+  }
+
+  loadComments(productId: string): void {
+    if (!this.useBackend()) {
+      return;
+    }
+
+    this.http.get<ProductComment[]>(`/api/products/${encodeURIComponent(productId)}/comments`).subscribe({
+      next: (list) => {
+        this.commentsByProduct.update((map) => ({ ...map, [productId]: list }));
+      },
+    });
+  }
+
+  addComment(productId: string, text: string, rating: number): Observable<boolean> {
+    const username = this.username().trim().toLowerCase();
+    if (!username || this.userRole() !== 'user') {
+      return of(false);
+    }
+
+    if (!this.useBackend()) {
+      const comment: ProductComment = {
+        id: Math.random().toString(36).slice(2, 10),
+        productId,
+        username,
+        text: text.trim(),
+        rating,
+        createdAt: new Date().toISOString(),
+      };
+      this.commentsByProduct.update((map) => ({
+        ...map,
+        [productId]: [comment, ...(map[productId] ?? [])],
+      }));
+      this.updateProductRatingLocal(productId);
+      return of(true);
+    }
+
+    return this.http
+      .post<{ comment: ProductComment; product: { id: string; rating: number; reviews: number } }>(
+        `/api/products/${encodeURIComponent(productId)}/comments`,
+        { username, text: text.trim(), rating },
+      )
+      .pipe(
+        tap(({ comment, product }) => {
+          this.commentsByProduct.update((map) => ({
+            ...map,
+            [productId]: [comment, ...(map[productId] ?? [])],
+          }));
+          this.products.update((list) =>
+            list.map((p) =>
+              p.id === product.id ? { ...p, rating: product.rating, reviews: product.reviews } : p,
+            ),
+          );
+        }),
+        map(() => true),
+        catchError(() => of(false)),
+      );
+  }
+
+  private updateProductRatingLocal(productId: string): void {
+    const comments = this.commentsByProduct()[productId] ?? [];
+    const count = comments.length;
+    const avg = count === 0 ? 0 : comments.reduce((s, c) => s + c.rating, 0) / count;
+    this.products.update((list) =>
+      list.map((p) =>
+        p.id === productId
+          ? { ...p, reviews: count, rating: Math.round(avg * 10) / 10 }
+          : p,
+      ),
+    );
   }
 
   addToCart(product: Product): void {

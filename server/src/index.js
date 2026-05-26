@@ -2,6 +2,8 @@ import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import { connectDb } from './db/connect.js';
+import { authRouter } from './routes/auth.js';
+import { commentsRouter } from './routes/comments.js';
 import { productsRouter } from './routes/products.js';
 import { ordersRouter } from './routes/orders.js';
 
@@ -16,7 +18,9 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'greenmarket-api' });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/products', productsRouter);
+app.use('/api/products/:productId/comments', commentsRouter);
 app.use('/api/orders', ordersRouter);
 
 app.use((err, _req, res, _next) => {

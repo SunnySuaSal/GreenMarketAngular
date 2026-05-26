@@ -11,7 +11,7 @@ App Angular + Vite basada en [GreenMarket Web App Mockups (Figma)](https://www.f
 - `src/app/services/green-market.store.ts` — estado con **Angular Signals** y sincronización con la API
 - `src/app/pages/*` — una página por pantalla (login, catálogo, carrito, etc.)
 - `src/app/guards/*` — `auth`, `guest`, `role`
-- `server/` — API **Express + Mongoose** (MongoDB): productos y pedidos
+- `server/` — API **Express + Mongoose** (MongoDB): productos, pedidos, usuarios y comentarios
 
 ## Base de datos (MongoDB)
 
@@ -23,7 +23,7 @@ App Angular + Vite basada en [GreenMarket Web App Mockups (Figma)](https://www.f
 
 2. **Variables de entorno** (opcional): copia `server/.env.example` a `server/.env` y ajusta `MONGODB_URI` o `PORT` si lo necesitas.
 
-3. **Sembrar productos de demo**:
+3. **Sembrar datos de demo** (productos + usuarios):
 
    ```bash
    npm run db:seed
@@ -47,3 +47,14 @@ npm run dev
 ```
 
 Flujo típico en dos terminales: `npm run api` y `npm run dev`.
+
+### Colecciones MongoDB
+
+| Colección | Contenido |
+|-----------|-----------|
+| `products` | Catálogo e inventario |
+| `orders` | Pedidos con líneas embebidas |
+| `users` | Usuario, contraseña hasheada (scrypt), rol |
+| `comments` | Reseñas de productos (texto + valoración 1–5) |
+
+Usuarios demo tras el seed: `admin`/`admin`, `juan`/`1234`, `maria`/`1234`.
